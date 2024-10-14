@@ -88,7 +88,10 @@ def fetch_records(limit=5):
             LIMIT ?
         ''', (limit,))
         rows = cursor.fetchall()
-    return rows
+
+    # Round the download, upload, and ping values before returning
+    rounded_rows = [(row[0], round(row[1], 2), round(row[2], 2), round(row[3], 2), row[4], row[5]) for row in rows]
+    return rounded_rows
 
 # Background speed test service (runs every 60 seconds)
 def background_speedtest_service(app):
@@ -103,7 +106,7 @@ class SpeedTestApp(tk.Tk):
         super().__init__()
 
         self.title("Speed Test App")
-        self.geometry("600x400")
+        self.geometry("800x600")
 
         # Initialize the database (ensure table exists)
         initialize_database()
