@@ -6,6 +6,8 @@ import threading
 import time
 import tkinter as tk
 from tkinter import ttk
+from tkinter import *
+import os
 
 # Install packages if they are missing
 def install(package):
@@ -41,7 +43,6 @@ def initialize_database():
 # Perform the speed test and update the SQLite database
 def run_speedtest():
     try:
-        # Speedtest object
         st = speedtest.Speedtest()
         server = st.get_best_server()
         server_name = server['sponsor']
@@ -52,10 +53,8 @@ def run_speedtest():
         upload_speed = st.upload() / 1_000_000  # Convert to Mbps
         ping = st.results.ping
 
-        # Get the current time for the record
         timestamp = datetime.now()
 
-        # Insert results into the SQLite database
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
             cursor.execute('''
@@ -73,7 +72,6 @@ def run_speedtest():
             "server_location": server_location
         }
     except Exception as e:
-        # Log the exception for debugging
         print(f"Error running speed test: {e}")
         return {"error": str(e)}
 
@@ -88,14 +86,15 @@ def fetch_records(limit=5):
             LIMIT ?
         ''', (limit,))
         rows = cursor.fetchall()
-    return rows
+
+    rounded_rows = [(row[0], round(row[1], 2), round(row[2], 2), round(row[3], 2), row[4], row[5]) for row in rows]
+    return rounded_rows
 
 # Background speed test service (runs every 60 seconds)
 def background_speedtest_service(app):
     while True:
         time.sleep(60)  # Adjust the sleep to run every 60 seconds
-        run_speedtest()
-        app.refresh_data()
+        app.run_speedtest()  # Ensure UI update happens in the main thread
 
 # GUI Application Class
 class SpeedTestApp(tk.Tk):
@@ -103,32 +102,25 @@ class SpeedTestApp(tk.Tk):
         super().__init__()
 
         self.title("Speed Test App")
-        self.geometry("600x400")
+        self.geometry("800x600")
 
-        # Initialize the database (ensure table exists)
         initialize_database()
 
-        # Number of records to display
         self.records_to_display = tk.IntVar(value=5)
+        self.is_testing = False
 
-        # Create UI elements
         self.create_widgets()
 
-        # Start background thread for periodic speed tests (initially paused)
-        self.is_testing = False
         self.bg_thread = threading.Thread(target=background_speedtest_service, args=(self,), daemon=True)
         self.bg_thread.start()
 
     def create_widgets(self):
-        # Label for status updates
         self.status_label = tk.Label(self, text="Press 'Run Test' to start a speed test", font=("Arial", 12))
         self.status_label.pack(pady=10)
 
-        # Button to run a new speed test manually
         self.test_button = tk.Button(self, text="Run Test", command=self.run_speedtest_thread, font=("Arial", 12))
         self.test_button.pack(pady=10)
 
-        # Dropdown to filter number of records displayed
         filter_label = tk.Label(self, text="Records to Display:", font=("Arial", 10))
         filter_label.pack(pady=5)
 
@@ -136,7 +128,6 @@ class SpeedTestApp(tk.Tk):
         filter_dropdown.pack(pady=5)
         filter_dropdown.bind("<<ComboboxSelected>>", lambda event: self.refresh_data())
 
-        # Table to display results
         self.tree = ttk.Treeview(self, columns=('Timestamp', 'Download', 'Upload', 'Ping', 'Server', 'Location'), show='headings')
         self.tree.heading('Timestamp', text='Timestamp')
         self.tree.heading('Download', text='Download (Mbps)')
@@ -146,14 +137,13 @@ class SpeedTestApp(tk.Tk):
         self.tree.heading('Location', text='Location')
         self.tree.pack(fill=tk.BOTH, expand=True)
 
-        # Initially load data
         self.refresh_data()
 
     def run_speedtest_thread(self):
-        # Prevent multiple tests from running simultaneously
         if not self.is_testing:
             self.is_testing = True
             self.status_label.config(text="Running speed test...")
+            self.test_button.config(state=tk.DISABLED)
             threading.Thread(target=self.run_speedtest, daemon=True).start()
 
     def run_speedtest(self):
@@ -164,20 +154,25 @@ class SpeedTestApp(tk.Tk):
             self.status_label.config(text="Speed test completed!")
             self.refresh_data()
 
-        # Allow tests again
         self.is_testing = False
+        self.test_button.config(state=tk.NORMAL)
 
     def refresh_data(self):
-        # Clear the current data
         for row in self.tree.get_children():
             self.tree.delete(row)
 
-        # Fetch new records based on the selected filter
         records = fetch_records(self.records_to_display.get())
         for record in records:
             self.tree.insert('', 'end', values=record)
 
-# Start the Tkinter app
+
 if __name__ == "__main__":
     app = SpeedTestApp()
+
+    try:
+        img = PhotoImage(file=r'image')  # Path to your image
+        app.iconphoto(False, img)
+    except Exception as e:
+        print(f"Could not load icon image: {e}")
+
     app.mainloop()
